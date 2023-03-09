@@ -1,0 +1,231 @@
+import cv2
+import tensorflow as tf 
+import numpy as np
+from keras.models import load_model
+import sys
+from flask import Flask, request, render_template, Response
+from streamlit_option_menu import option_menu
+
+#Loading the VGG16 model
+model= load_model('model.h5',compile=(False))
+
+#Functions
+def predict(frame, model):
+    # Pre-process the image for model prediction
+    img = cv2.resize(frame, (299, 299))
+    img = img.astype(np.float32)
+    img = np.expand_dims(img, axis=0)
+
+    img /= 255.0
+
+    # Predict with the VGG16 model
+    prediction = model.predict(img)
+
+    # Convert the prediction into text
+    pred_text = tf.keras.applications.inception_v3.decode_predictions(prediction, top=1)
+    for (i, (imagenetID, label, prob)) in enumerate(pred_text[0]):
+        label  = ("{}: {:.2f}%".format(label, prob * 100))
+
+    return label
+
+
+def predict2(frame, model):
+    # Pre-process the image for model prediction
+    img = cv2.resize(frame, (299, 299))
+    img = img.astype(np.float32)
+    img = np.expand_dims(img, axis=0)
+
+    img /= 255.0
+
+    # Predict with the VGG16 model
+    prediction = model.predict(img)
+
+    # Convert the prediction into text
+    pred_text = tf.keras.applications.vgg16.decode_predictions(prediction, top=1)
+    for (i, (imagenetID, label, prob)) in enumerate(pred_text[0]):
+        pred_class = label
+
+    return pred_class
+
+def object_detection(search_key,frame, model):
+    label = predict2(frame,model)
+    label = label.lower()
+    try:
+        if label.find(search_key) > -1:
+            sys.exit(predict(frame, model))
+        else:
+            return 'Not found'
+
+    except:
+        print('')
+
+# Flask app
+app = Flask(__name__)
+
+# Main App
+@app.route('/', methods=['GET'])
+def home():
+    return render_template('index.html')
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    if request.method == 'POST':
+        # Check if video file is uploaded
+        if 'file' not in request.files:
+            return 'No file found'
+        file = request.files['file']
+        # Check if file is selected
+        if file.filename == '':
+            return 'No file selected'
+        path = file.filename
+        file.save(path)
+
+        cap = cv2.VideoCapture(path)
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
+
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        output = cv2.VideoWriter('output.mp4', fourcc, 20.0, (frame_width, frame_height))
+
+        # Start the video prediction loop
+        while cap.isOpened():
+            ret, frame = cap.read()
+
+            if not ret:
+                break
+
+            # Perform object detection
+            object_detection(request.form.get('search_key', '').lower(), frame, model)
+
+            # Display the resulting frame
+
+        cap.release()
+        output.release()
+        cv2.destroyAllWindows()
+
+    return 'File uploaded'
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+## HTML CODE
+
+
+index.html
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Object Detection</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-4">Object Detection</h1>
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="file">Choose video file:</label>
+          <input type="file" class="form-control-file" name="file" id="file">
+        </div>
+        <div class="form-group">
+          <label for="search_key">Enter search key:</label>
+          <input type="text" class="form-control" name="search_key" id="search_key">
+        </div>
+        <button type="submit" class="btn btn-primary">Upload</button>
+      </form>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  </body>
+</html>
+
+
+###result.html
+
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Object Detection Result</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-4">Object Detection Result</h1>
+      <hr>
+      <div class="row">
+        <div class="col-md-6">
+          <h4>Video Preview</h4>
+          <video width="100%" controls>
+            <source src="{{ url_for('static', filename='output.mp4') }}" type="video/mp4">
+            Your browser does not support HTML5 video.
+          </video>
+        </div>
+        <div class="col-md-6">
+          <h4>Object Detection</h4>
+          <p>{{ result }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.16.0/umd/popper.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  </body>
+</html>
+
+
+
+To run the Flask application and the object detection script together, you'll need to:
+
+Install the necessary libraries and dependencies: cv2, tensorflow, numpy, keras, sys, flask, and streamlit_option_menu. You can install them using pip install command in your terminal.
+
+Save the object detection script and the Flask application code in separate Python files. For example, you can save the object detection script as object_detection.py and the Flask app as app.py.
+
+Create the necessary HTML templates for the Flask application. In this case, you need to create index.html for the home page and result.html to display the result of object detection.
+
+Save the pre-trained model file (in this example, it's model.h5) in the same directory as the Flask app and the object detection script.
+
+Run the Flask app using the following command in your terminal: python app.py. This will start the Flask development server.
+
+In your web browser, go to the URL http://localhost:5000/ to access the home page of the Flask app. Here, you can upload a video file and specify the search key for object detection.
+
+When you submit the form, the Flask app will run the object detection script on the uploaded video file and display the result in the result.html template.
+
+Note: Make sure to update any file paths or other configurations in the code to match your local environment.
+
+
+
+##Here is a possible project layout for the Flask app and object detection script:
+
+Copy code
+project/
+│
+├── app.py
+├── object_detection.py
+├── model.h5
+│
+├── templates/
+│   ├── index.html
+│   └── result.html
+│
+├── static/
+│   └── css/
+│       └── style.css
+│
+└── uploads/
+    └── video.mp4
+app.py is the Flask application code.
+object_detection.py is the script that contains the object detection functions.
+model.h5 is the pre-trained model file.
+templates directory contains the HTML templates for the Flask application.
+static directory contains the CSS stylesheet for the HTML templates.
+uploads directory is where the uploaded video files will be saved.
+Note: This is just an example layout, you can organize your files and directories in a way that makes sense for your project.
